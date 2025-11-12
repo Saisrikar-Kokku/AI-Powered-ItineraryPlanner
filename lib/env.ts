@@ -3,7 +3,7 @@ export function validateEnv() {
   const requiredEnvVars = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_GEMINI_API_KEY: process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+    NEXT_PUBLIC_OPENROUTER_API_KEY: process.env.NEXT_PUBLIC_OPENROUTER_API_KEY,
   }
 
   const missingVars: string[] = []
@@ -27,7 +27,7 @@ export function validateEnv() {
   return {
     supabaseUrl: requiredEnvVars.NEXT_PUBLIC_SUPABASE_URL!,
     supabaseAnonKey: requiredEnvVars.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    geminiApiKey: requiredEnvVars.NEXT_PUBLIC_GEMINI_API_KEY!,
+    openRouterApiKey: requiredEnvVars.NEXT_PUBLIC_OPENROUTER_API_KEY!,
   }
 }
 

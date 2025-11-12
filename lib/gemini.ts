@@ -1,8 +1,17 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import { env } from './env'
 
-// Initialize Gemini AI with validated API key
-const genAI = new GoogleGenerativeAI(env.geminiApiKey)
+// Get OpenRouter API key
+const getApiKey = () => {
+  const apiKey = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || env.openRouterApiKey
+  
+  if (process.env.NODE_ENV === 'development') {
+    const keyPreview = apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'NOT FOUND'
+    console.log('🔑 OpenRouter API Key:', keyPreview)
+    console.log('📝 Key length:', apiKey?.length || 0)
+  }
+  
+  return apiKey
+}
 
 export interface TripPreferences {
   tripType: 'leisure' | 'business' | 'adventure' | 'cultural' | 'romantic' | 'family' | 'solo' | 'group'
@@ -72,18 +81,188 @@ export interface GeneratedItinerary {
   createdAt: string
 }
 
+// Free models with fallback order (best to use first)
+const FREE_MODELS = [
+  'meta-llama/llama-3.1-8b-instruct:free',     // Most reliable, fast
+  'microsoft/phi-3-mini-128k-instruct:free',   // Very fast, good quality
+  'google/gemini-flash-1.5:free',              // Stable Gemini version
+  'qwen/qwen-2-7b-instruct:free',              // Good alternative
+  'google/gemini-2.0-flash-exp:free'           // Newest but often rate-limited
+]
+
 export async function generateItinerary(preferences: TripPreferences): Promise<GeneratedItinerary> {
-  try {
-    // Try Gemini 2.0 Flash first, fallback to Gemini Pro if not available
-    let model
+  const apiKey = getApiKey()
+  
+  if (!apiKey) {
+    throw new Error('OpenRouter API key is not configured. Please set NEXT_PUBLIC_OPENROUTER_API_KEY in .env.local')
+  }
+
+  const prompt = createItineraryPrompt(preferences)
+
+  // Try models in order until one works
+  let lastError: any = null
+  
+  for (let i = 0; i < FREE_MODELS.length; i++) {
+    const model = FREE_MODELS[i]
+    
     try {
-      model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' })
-    } catch (error) {
-      console.log('Gemini 2.0 Flash not available, falling back to Gemini Pro')
-      model = genAI.getGenerativeModel({ model: 'gemini-pro' })
+      console.log(`🚀 Generating itinerary with OpenRouter (attempt ${i + 1}/${FREE_MODELS.length})...`)
+      console.log('📦 Using model:', model)
+      console.log('📝 Prompt length:', prompt.length, 'characters')
+      console.log('⚡ Max tokens: UNLIMITED (full response generation)')
+      
+      const requestBody = {
+        model: model,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7
+        // No max_tokens limit - allows complete response without truncation
+      }
+    
+    console.log('📤 Sending request to OpenRouter...')
+    
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+        'X-Title': 'AI Itinerary Planner'
+      },
+      body: JSON.stringify(requestBody)
+    })
+
+    console.log('📥 Response status:', response.status)
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('❌ API Error Response:', errorText)
+      let error
+      try {
+        error = JSON.parse(errorText)
+      } catch {
+        throw new Error(`OpenRouter API error (${response.status}): ${errorText}`)
+      }
+      
+      // Check if it's a rate limit error
+      if (response.status === 429) {
+        throw new Error('OpenRouter rate limit reached. Please wait a moment and try again.')
+      }
+      
+      // Check if it's an authentication error
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('Invalid OpenRouter API key. Please check NEXT_PUBLIC_OPENROUTER_API_KEY in your environment variables.')
+      }
+      
+      throw new Error(error.error?.message || `OpenRouter API error: ${response.status}`)
     }
 
-    const prompt = `
+    const data = await response.json()
+    console.log('📦 Response data structure:', Object.keys(data))
+    console.log('📦 Choices available:', data.choices?.length)
+    
+    if (!data.choices || data.choices.length === 0) {
+      console.error('❌ No choices in response:', data)
+      throw new Error('OpenRouter returned empty response. The AI model may be unavailable. Please try again.')
+    }
+    
+    const text = data.choices[0]?.message?.content || ''
+    const finishReason = data.choices[0]?.finish_reason
+    
+    console.log('📝 Response length:', text.length, 'characters')
+    console.log('📝 Finish reason:', finishReason)
+    console.log('📝 Response preview:', text.substring(0, 200))
+    
+    if (!text || text.trim().length === 0) {
+      console.error('❌ Empty content in response')
+      console.error('Full response:', JSON.stringify(data, null, 2))
+      throw new Error('OpenRouter returned empty content. The AI model may be having issues. Please try again.')
+    }
+    
+    // Check if response was cut off due to token limits
+    if (finishReason === 'length') {
+      console.warn('⚠️ Warning: Response may be incomplete (finish_reason: length)')
+      console.warn('⚠️ This means the model hit its output token limit')
+      // Continue anyway - we'll try to parse what we got
+    }
+
+    // Clean up the response (remove markdown formatting if present)
+    let cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    
+    // Try to extract JSON if it's wrapped in other text
+    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      cleanedText = jsonMatch[0]
+    }
+    
+    // Parse the JSON response
+    let itinerary
+    try {
+      itinerary = JSON.parse(cleanedText)
+    } catch (parseError) {
+      console.error('❌ JSON parse error:', parseError)
+      console.error('📄 Cleaned text length:', cleanedText.length)
+      console.error('📄 First 500 chars:', cleanedText.substring(0, 500))
+      console.error('📄 Last 500 chars:', cleanedText.substring(Math.max(0, cleanedText.length - 500)))
+      
+      // Check if response was likely cut off
+      if (finishReason === 'length') {
+        throw new Error(
+          'AI response was incomplete due to model output limits. ' +
+          'The response was cut off before completing the JSON structure. ' +
+          'Please try with a shorter trip duration (fewer days) or simpler preferences.'
+        )
+      }
+      
+      throw new Error(
+        'Failed to parse AI response. The response may not be in valid JSON format. ' +
+        'Please try again or adjust your trip preferences.'
+      )
+    }
+    
+    // Add metadata
+    const generatedItinerary: GeneratedItinerary = {
+      ...itinerary,
+      id: `itinerary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date().toISOString()
+    }
+
+      console.log(`✅ Successfully generated itinerary with ${model}!`)
+      return generatedItinerary
+      
+    } catch (error: any) {
+      console.error(`❌ Model ${model} failed:`, error.message)
+      lastError = error
+      
+      // Check if it's a permanent error (don't retry for these)
+      if (error?.message?.includes('401') || error?.message?.includes('403') || error?.message?.includes('Invalid OpenRouter API key')) {
+        throw new Error('Invalid OpenRouter API key. Please check NEXT_PUBLIC_OPENROUTER_API_KEY in .env.local')
+      }
+      
+      // If it's a rate limit or temporary error, try next model
+      if (i < FREE_MODELS.length - 1) {
+        console.log(`🔄 Trying next model (${FREE_MODELS[i + 1]})...`)
+        continue
+      }
+      
+      // All models failed
+      throw new Error(
+        `All AI models are temporarily unavailable. Last error: ${lastError.message}. ` +
+        `Please try again in a few moments.`
+      )
+    }
+  }
+  
+  // Should never reach here
+  throw new Error('Failed to generate itinerary: All models unavailable')
+}
+
+function createItineraryPrompt(preferences: TripPreferences): string {
+  return `
 You are an expert travel planner and AI assistant specializing in creating detailed, personalized travel itineraries using the latest travel data and insights. 
 Create a comprehensive, realistic, and highly detailed day-by-day itinerary based on the following preferences:
 
@@ -174,30 +353,8 @@ Include diverse, engaging activities that match the trip type and interests. Pro
 Ensure the itinerary offers an exceptional travel experience with optimal timing, logical flow, and memorable experiences.
 Use your advanced reasoning capabilities to create the most comprehensive and personalized travel plan possible.
 `
-
-    const result = await model.generateContent(prompt)
-    const response = await result.response
-    const text = response.text()
-
-    // Clean up the response (remove markdown formatting if present)
-    const cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    
-    // Parse the JSON response
-    const itinerary = JSON.parse(cleanedText)
-    
-    // Add metadata
-    const generatedItinerary: GeneratedItinerary = {
-      ...itinerary,
-      id: `itinerary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: new Date().toISOString()
-    }
-
-    return generatedItinerary
-  } catch (error) {
-    console.error('Error generating itinerary:', error)
-    throw new Error('Failed to generate itinerary. Please try again.')
-  }
 }
+
 
 // Helper function to validate trip preferences
 export function validateTripPreferences(preferences: Partial<TripPreferences>): string[] {

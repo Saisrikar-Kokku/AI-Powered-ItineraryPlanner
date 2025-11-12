@@ -23,6 +23,9 @@ export default function PlannerPage() {
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(true)
   const [initialValues, setInitialValues] = useState<Partial<TripPreferences> | null>(null)
+  const [retryCountdown, setRetryCountdown] = useState<number | null>(null)
+  const [lastPreferences, setLastPreferences] = useState<TripPreferences | null>(null)
+  const [autoRetryEnabled, setAutoRetryEnabled] = useState(false)
 
   useEffect(() => {
     // Read URL parameters from client-side (no need for Suspense)
@@ -40,18 +43,56 @@ export default function PlannerPage() {
     }
   }, [])
 
-  const handleGenerateItinerary = async (preferences: TripPreferences) => {
+  const handleGenerateItinerary = async (preferences: TripPreferences, isRetry = false) => {
     setIsGenerating(true)
     setError(null)
     setGeneratedItinerary(null)
+    setRetryCountdown(null)
+    setLastPreferences(preferences)
 
     try {
       const itinerary = await generateItinerary(preferences)
       setGeneratedItinerary(itinerary)
       setShowForm(false)
+      setAutoRetryEnabled(false)
     } catch (err) {
       console.error('Error generating itinerary:', err)
-      setError(err instanceof Error ? err.message : 'Failed to generate itinerary')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate itinerary'
+      setError(errorMessage)
+      
+      // Extract retry delay from error (check error object first, then message)
+      let delay: number | null = null
+      if ((err as any)?.retryDelay) {
+        delay = (err as any).retryDelay
+      } else {
+        const retryMatch = errorMessage.match(/wait (\d+)/i) || errorMessage.match(/retry in (\d+)/i)
+        if (retryMatch) {
+          delay = parseInt(retryMatch[1])
+        }
+      }
+      
+      if (delay && !isRetry) {
+        setRetryCountdown(delay)
+        setAutoRetryEnabled(true)
+        
+        // Start countdown
+        let currentCountdown = delay
+        const countdownInterval = setInterval(() => {
+          currentCountdown -= 1
+          setRetryCountdown(currentCountdown)
+          
+          if (currentCountdown <= 0) {
+            clearInterval(countdownInterval)
+            setRetryCountdown(null)
+            // Auto-retry when countdown reaches 0
+            if (preferences) {
+              setTimeout(() => {
+                handleGenerateItinerary(preferences, true)
+              }, 1000)
+            }
+          }
+        }, 1000)
+      }
     } finally {
       setIsGenerating(false)
     }
@@ -141,24 +182,73 @@ export default function PlannerPage() {
                 exit={{ opacity: 0, y: -20 }}
                 className="mb-6"
               >
-                <Card className="border-red-200 bg-red-50">
+                <Card className="border-orange-200 bg-orange-50">
                   <CardContent className="pt-6">
-                    <div className="flex items-center space-x-3">
-                      <AlertCircle className="w-5 h-5 text-red-600" />
-                      <div>
-                        <h3 className="font-semibold text-red-800">Error Generating Itinerary</h3>
-                        <p className="text-red-700">{error}</p>
+                    <div className="space-y-4">
+                      <div className="flex items-start space-x-3">
+                        <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-orange-800 mb-2">Quota Limit Reached</h3>
+                          <p className="text-orange-700 text-sm mb-3">{error}</p>
+                          
+                          {retryCountdown !== null && retryCountdown > 0 && (
+                            <div className="bg-white rounded-lg p-4 mb-3 border border-orange-200">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-orange-800">Auto-retrying in:</span>
+                                <span className="text-2xl font-bold text-orange-600">{retryCountdown}s</span>
+                              </div>
+                              <div className="w-full bg-orange-200 rounded-full h-2">
+                                <div 
+                                  className="bg-orange-600 h-2 rounded-full transition-all duration-1000"
+                                  style={{ width: `${((retryCountdown / (retryCountdown + 5)) * 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+                            <p className="text-sm font-semibold text-blue-900">Quick Solutions:</p>
+                            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                              <li>Wait for automatic retry (countdown above)</li>
+                              <li>Enable billing in Google Cloud Console (free tier still applies)</li>
+                              <li>Check quota at: <a href="https://ai.dev/usage?tab=rate-limit" target="_blank" rel="noopener noreferrer" className="underline">ai.dev/usage</a></li>
+                              <li>Create a new API key from a different Google Cloud project</li>
+                            </ul>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="mt-4">
-                      <Button
-                        onClick={handleNewItinerary}
-                        variant="outline"
-                        size="sm"
-                        className="border-red-300 text-red-700 hover:bg-red-100"
-                      >
-                        Try Again
-                      </Button>
+                      
+                      <div className="flex gap-2">
+                        {retryCountdown === null && lastPreferences && (
+                          <Button
+                            onClick={() => handleGenerateItinerary(lastPreferences)}
+                            variant="gradient"
+                            size="sm"
+                            disabled={isGenerating}
+                          >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Retry Now
+                          </Button>
+                        )}
+                        <Button
+                          onClick={handleNewItinerary}
+                          variant="outline"
+                          size="sm"
+                          className="border-orange-300 text-orange-700 hover:bg-orange-100"
+                        >
+                          Start Over
+                        </Button>
+                        {autoRetryEnabled && (
+                          <Button
+                            onClick={() => setAutoRetryEnabled(false)}
+                            variant="ghost"
+                            size="sm"
+                            className="text-orange-600"
+                          >
+                            Cancel Auto-Retry
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

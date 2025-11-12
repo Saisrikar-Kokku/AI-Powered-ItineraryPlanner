@@ -39,40 +39,97 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Function to fetch user profile
+  // Function to fetch user profile with timeout
   const fetchUserProfile = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 5000)
+      )
+
+      const fetchPromise = supabase
         .from('users')
         .select('*')
         .eq('id', userId)
         .single()
 
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
+
       if (error) {
+        // If table doesn't exist or user profile doesn't exist, that's okay
+        if (error.code === 'PGRST116' || error.code === '42P01') {
+          console.log('User profile table not found or user profile does not exist - this is okay')
+          return null
+        }
         console.error('Error fetching user profile:', error)
         return null
       }
 
       return data as UserProfile
-    } catch (error) {
-      console.error('Error fetching user profile:', error)
+    } catch (error: any) {
+      // Timeout or other errors - just return null, don't block auth
+      if (error?.message === 'Profile fetch timeout') {
+        console.warn('User profile fetch timed out - continuing without profile')
+      } else {
+        console.error('Error fetching user profile:', error)
+      }
       return null
     }
   }
 
   useEffect(() => {
-    // Get initial session
+    let mounted = true
+    
+    // Get initial session with timeout
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setSession(session)
-      setUser(session?.user ?? null)
-      
-      if (session?.user) {
-        const profile = await fetchUserProfile(session.user.id)
-        setUserProfile(profile)
+      try {
+        // Set a timeout for the entire auth check (10 seconds max)
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Auth initialization timeout')), 10000)
+        )
+
+        const sessionPromise = supabase.auth.getSession()
+        
+        let sessionResult
+        try {
+          sessionResult = await Promise.race([sessionPromise, timeoutPromise]) as any
+        } catch (timeoutError) {
+          console.warn('Auth session check timed out - continuing without session')
+          if (mounted) {
+            setLoading(false)
+          }
+          return
+        }
+        
+        const { data: { session } } = sessionResult
+        
+        if (!mounted) return
+
+        setSession(session)
+        setUser(session?.user ?? null)
+        
+        // Fetch profile in background, don't block loading
+        if (session?.user) {
+          fetchUserProfile(session.user.id).then(profile => {
+            if (mounted) {
+              setUserProfile(profile)
+            }
+          }).catch(err => {
+            console.error('Background profile fetch error:', err)
+          })
+        }
+        
+        setLoading(false)
+      } catch (error: any) {
+        console.error('Error initializing auth:', error)
+        // Even on error, stop loading so user can see the page
+        if (mounted) {
+          setLoading(false)
+          // Set user to null on error so protected routes show login
+          setUser(null)
+          setSession(null)
+        }
       }
-      
-      setLoading(false)
     }
 
     getInitialSession()
@@ -80,12 +137,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!mounted) return
+
         setSession(session)
         setUser(session?.user ?? null)
         
+        // Fetch profile in background
         if (session?.user) {
-          const profile = await fetchUserProfile(session.user.id)
-          setUserProfile(profile)
+          fetchUserProfile(session.user.id).then(profile => {
+            if (mounted) {
+              setUserProfile(profile)
+            }
+          }).catch(err => {
+            console.error('Background profile fetch error:', err)
+          })
         } else {
           setUserProfile(null)
         }
@@ -94,7 +159,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const signUp = async (email: string, password: string, name?: string) => {

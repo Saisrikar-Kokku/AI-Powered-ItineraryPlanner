@@ -35,3 +35,21 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+
+# Setup files (not needed for deployment)
+*_SETUP.md
+*_GUIDE.md
+*_FIXES.md
+*_MODELS.md
+*_UPDATES.md
+*.sql
