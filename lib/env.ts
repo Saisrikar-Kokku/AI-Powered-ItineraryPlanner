@@ -1,9 +1,9 @@
-// Environment variable validation for production
+// Environment variable validation for client-side (public) variables
+// Note: OPENROUTER_API_KEY is now server-side only and validated in API routes
 export function validateEnv() {
   const requiredEnvVars = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_OPENROUTER_API_KEY: process.env.NEXT_PUBLIC_OPENROUTER_API_KEY,
   }
 
   const missingVars: string[] = []
@@ -27,7 +27,6 @@ export function validateEnv() {
   return {
     supabaseUrl: requiredEnvVars.NEXT_PUBLIC_SUPABASE_URL!,
     supabaseAnonKey: requiredEnvVars.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    openRouterApiKey: requiredEnvVars.NEXT_PUBLIC_OPENROUTER_API_KEY!,
   }
 }
 
