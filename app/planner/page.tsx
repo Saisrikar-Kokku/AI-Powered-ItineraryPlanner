@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { TripPlanningForm } from '@/components/TripPlanningForm'
@@ -22,6 +22,23 @@ export default function PlannerPage() {
   const [generatedItinerary, setGeneratedItinerary] = useState<GeneratedItinerary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(true)
+  const [initialValues, setInitialValues] = useState<Partial<TripPreferences> | null>(null)
+
+  useEffect(() => {
+    // Read URL parameters from client-side (no need for Suspense)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const destination = params.get('destination')
+      const tripType = params.get('tripType')
+      
+      if (destination || tripType) {
+        setInitialValues({
+          ...(destination && { destination }),
+          ...(tripType && { tripType: tripType as TripPreferences['tripType'] })
+        })
+      }
+    }
+  }, [])
 
   const handleGenerateItinerary = async (preferences: TripPreferences) => {
     setIsGenerating(true)
@@ -162,6 +179,7 @@ export default function PlannerPage() {
                 <TripPlanningForm
                   onSubmit={handleGenerateItinerary}
                   isLoading={isGenerating}
+                  initialValues={initialValues || undefined}
                 />
               </motion.div>
             ) : generatedItinerary ? (

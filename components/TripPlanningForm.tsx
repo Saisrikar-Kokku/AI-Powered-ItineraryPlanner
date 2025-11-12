@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,7 @@ import {
 interface TripPlanningFormProps {
   onSubmit: (preferences: TripPreferences) => Promise<void>
   isLoading: boolean
+  initialValues?: Partial<TripPreferences>
 }
 
 const tripTypes = [
@@ -70,21 +71,32 @@ const commonInterests = [
   'Music & Festivals', 'Wildlife', 'Religious Sites', 'Markets & Bazaars'
 ]
 
-export function TripPlanningForm({ onSubmit, isLoading }: TripPlanningFormProps) {
+export function TripPlanningForm({ onSubmit, isLoading, initialValues }: TripPlanningFormProps) {
   const [formData, setFormData] = useState<TripPreferences>({
-    tripType: 'leisure',
-    destination: '',
-    duration: 3,
-    budget: 'mid-range',
-    travelers: 2,
-    interests: [],
-    accommodation: 'hotel',
-    transportation: 'flight',
-    specialRequirements: ''
+    tripType: initialValues?.tripType || 'leisure',
+    destination: initialValues?.destination || '',
+    duration: initialValues?.duration || 3,
+    budget: initialValues?.budget || 'mid-range',
+    travelers: initialValues?.travelers || 2,
+    interests: initialValues?.interests || [],
+    accommodation: initialValues?.accommodation || 'hotel',
+    transportation: initialValues?.transportation || 'flight',
+    specialRequirements: initialValues?.specialRequirements || ''
   })
 
   const [errors, setErrors] = useState<string[]>([])
   const [currentStep, setCurrentStep] = useState(1)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Update form data when initialValues change
+  useEffect(() => {
+    if (initialValues) {
+      setFormData(prev => ({
+        ...prev,
+        ...initialValues
+      }))
+    }
+  }, [initialValues])
 
   const handleInputChange = (field: keyof TripPreferences, value: any) => {
     setFormData(prev => ({
@@ -109,14 +121,40 @@ export function TripPlanningForm({ onSubmit, isLoading }: TripPlanningFormProps)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    
+    // Only allow submission from the final step
+    if (currentStep !== 3) {
+      return
+    }
+
+    // Prevent multiple submissions
+    if (isSubmitting || isLoading) {
+      return
+    }
+
+    setIsSubmitting(true)
     
     const validationErrors = validateTripPreferences(formData)
     if (validationErrors.length > 0) {
       setErrors(validationErrors)
+      setIsSubmitting(false)
       return
     }
 
-    await onSubmit(formData)
+    try {
+      await onSubmit(formData)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Prevent form submission on Enter key in input fields (except on last step)
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      // Don't submit form on Enter - user must click the button
+    }
   }
 
   const nextStep = () => {
@@ -185,6 +223,7 @@ export function TripPlanningForm({ onSubmit, isLoading }: TripPlanningFormProps)
                       placeholder="e.g., Goa, Kerala, Rajasthan, Himachal Pradesh"
                       value={formData.destination}
                       onChange={(e) => handleInputChange('destination', e.target.value)}
+                      onKeyDown={handleInputKeyDown}
                       className="w-full"
                     />
                   </div>
@@ -199,7 +238,8 @@ export function TripPlanningForm({ onSubmit, isLoading }: TripPlanningFormProps)
                       min="1"
                       max="30"
                       value={formData.duration}
-                      onChange={(e) => handleInputChange('duration', parseInt(e.target.value))}
+                      onChange={(e) => handleInputChange('duration', parseInt(e.target.value) || 1)}
+                      onKeyDown={handleInputKeyDown}
                       className="w-full"
                     />
                   </div>
@@ -214,7 +254,8 @@ export function TripPlanningForm({ onSubmit, isLoading }: TripPlanningFormProps)
                       min="1"
                       max="20"
                       value={formData.travelers}
-                      onChange={(e) => handleInputChange('travelers', parseInt(e.target.value))}
+                      onChange={(e) => handleInputChange('travelers', parseInt(e.target.value) || 1)}
+                      onKeyDown={handleInputKeyDown}
                       className="w-full"
                     />
                   </div>
@@ -372,6 +413,7 @@ export function TripPlanningForm({ onSubmit, isLoading }: TripPlanningFormProps)
                       placeholder="Any special needs, dietary restrictions, accessibility requirements, etc."
                       value={formData.specialRequirements}
                       onChange={(e) => handleInputChange('specialRequirements', e.target.value)}
+                      onKeyDown={handleInputKeyDown}
                       className="w-full p-3 border border-gray-300 rounded-lg resize-none"
                       rows={3}
                     />
@@ -397,23 +439,42 @@ export function TripPlanningForm({ onSubmit, isLoading }: TripPlanningFormProps)
             <Button
               type="button"
               variant="outline"
-              onClick={prevStep}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                prevStep()
+              }}
               disabled={currentStep === 1}
             >
               Previous
             </Button>
 
             {currentStep < 3 ? (
-              <Button type="button" onClick={nextStep}>
+              <Button 
+                type="button" 
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  nextStep()
+                }}
+              >
                 Next
               </Button>
             ) : (
               <Button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || isSubmitting || currentStep !== 3}
                 className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
+                onClick={(e) => {
+                  // Ensure this is the only way to submit
+                  if (currentStep !== 3) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    return
+                  }
+                }}
               >
-                {isLoading ? (
+                {isLoading || isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Generating Itinerary...

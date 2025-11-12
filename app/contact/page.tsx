@@ -106,19 +106,19 @@ export default function ContactPage() {
     {
       icon: Mail,
       title: 'Email Us',
-      description: 'hello@aiitinerary.com',
-      action: 'mailto:hello@aiitinerary.com'
+      description: 'smart@aiitinerary.com',
+      action: 'mailto:smart@aiitinerary.com'
     },
     {
       icon: Phone,
       title: 'Call Us',
-      description: '+1 (555) 123-4567',
+      description: '+91 8896246224',
       action: 'tel:+15551234567'
     },
     {
       icon: MapPin,
       title: 'Visit Us',
-      description: 'San Francisco, CA',
+      description: 'Hyderabad,mruh',
       action: '#'
     },
     {

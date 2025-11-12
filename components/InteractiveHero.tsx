@@ -14,27 +14,28 @@ import {
   Globe,
   Clock
 } from 'lucide-react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 const destinations = [
-  'Tokyo, Japan',
-  'Paris, France', 
-  'New York, USA',
-  'Barcelona, Spain',
-  'London, UK',
-  'Rome, Italy',
-  'Bangkok, Thailand',
-  'Sydney, Australia'
+  'Goa, India',
+  'Kerala, India', 
+  'Rajasthan, India',
+  'Himachal Pradesh, India',
+  'Uttarakhand, India',
+  'Tamil Nadu, India',
+  'Karnataka, India',
+  'Maharashtra, India'
 ]
 
 const travelTypes = [
-  { icon: Globe, label: 'Adventure', color: 'from-green-500 to-emerald-500' },
-  { icon: Sparkles, label: 'Luxury', color: 'from-purple-500 to-pink-500' },
-  { icon: Users, label: 'Family', color: 'from-blue-500 to-cyan-500' },
-  { icon: Clock, label: 'Quick Trip', color: 'from-orange-500 to-red-500' }
+  { icon: Globe, label: 'Adventure', value: 'adventure', color: 'from-green-500 to-emerald-500' },
+  { icon: Sparkles, label: 'Luxury', value: 'leisure', color: 'from-purple-500 to-pink-500' },
+  { icon: Users, label: 'Family', value: 'family', color: 'from-blue-500 to-cyan-500' },
+  { icon: Clock, label: 'Cultural', value: 'cultural', color: 'from-orange-500 to-red-500' }
 ]
 
 export function InteractiveHero() {
+  const router = useRouter()
   const [currentDestination, setCurrentDestination] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTravelType, setSelectedTravelType] = useState(0)
@@ -48,13 +49,26 @@ export function InteractiveHero() {
   }, [])
 
   const handleSearch = () => {
+    // Get the destination - use search query if provided, otherwise use the current rotating destination
+    const destination = searchQuery.trim() || destinations[currentDestination]
+    const tripType = travelTypes[selectedTravelType].value
+
+    if (!destination) {
+      return // Don't proceed if no destination
+    }
+
     setIsSearching(true)
-    // Simulate search
+    
+    // Navigate to planner page with destination and trip type as URL parameters
+    const params = new URLSearchParams({
+      destination: destination,
+      tripType: tripType
+    })
+    
+    // Small delay for better UX
     setTimeout(() => {
-      setIsSearching(false)
-      // In a real app, this would navigate to results
-      console.log('Searching for:', searchQuery, 'Type:', travelTypes[selectedTravelType].label)
-    }, 1500)
+      router.push(`/planner?${params.toString()}`)
+    }, 300)
   }
 
   return (
@@ -120,7 +134,7 @@ export function InteractiveHero() {
                   <MapPin className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
                     type="text"
-                    placeholder="Where do you want to go?"
+                    placeholder="e.g., Goa, Kerala, Rajasthan, Himachal Pradesh"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-12 h-14 text-lg border-2 border-gray-200 focus:border-primary"
@@ -152,7 +166,7 @@ export function InteractiveHero() {
                 {/* Search Button */}
                 <Button
                   onClick={handleSearch}
-                  disabled={isSearching || !searchQuery}
+                  disabled={isSearching}
                   size="lg"
                   variant="gradient"
                   className="w-full h-14 text-lg"
