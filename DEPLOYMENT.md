@@ -17,11 +17,7 @@ In your Vercel project dashboard, go to **Settings → Environment Variables** a
 
 #### Required Variables:
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://psvjfkkwibhsuvqpjvte.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-OPENROUTER_API_KEY=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
-NEXT_PUBLIC_APP_URL=https://your-domain.vercel.app
+
 ```
 
 #### Important Notes:
